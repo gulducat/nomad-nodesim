@@ -16,9 +16,9 @@ const defaultAddr = "[::]:4649"
 
 // CreateRequest is the request body for POST /v1/groups.
 type CreateRequest struct {
-	Name       string      `json:"name"`
-	Count int         `json:"count"` 
-	Node       *NodeConfig `json:"node,omitempty"`
+	Name  string      `json:"name"`
+	Count int         `json:"count"`
+	Node  *NodeConfig `json:"node,omitempty"`
 }
 
 // NodeConfig mirrors the HCL node{} block for use in API requests.
@@ -96,8 +96,8 @@ func buildMux(m managerFacade) http.Handler {
 
 	mux.HandleFunc("POST /v1/groups", func(w http.ResponseWriter, r *http.Request) {
 		var req CreateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if err := decodeStrict(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if req.Name == "" {
@@ -150,8 +150,8 @@ func buildMux(m managerFacade) http.Handler {
 		var req struct {
 			Count int `json:"count"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if err := decodeStrict(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if req.Count < 0 {
@@ -182,4 +182,13 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// decodeStrict decodes JSON from r.Body into v, returning an error for unknown
+// fields or malformed input. This gives callers an informative error message
+// (e.g. "json: unknown field \"nmae\"") instead of silently ignoring typos.
+func decodeStrict(r *http.Request, v any) error {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }

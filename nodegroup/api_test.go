@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	internalConfig "github.com/hashicorp-forge/nomad-nodesim/internal/config"
@@ -49,10 +50,10 @@ func (f *fakeManager) Create(name string, startCount int, _ *internalConfig.Node
 		return nil, ErrAlreadyExists
 	}
 	s := &Status{
-		Name:         name,
+		Name:  name,
 		Count: startCount,
 		Nodes: startCount,
-		Ready:        true,
+		Ready: true,
 	}
 	f.groups[name] = s
 	cp := *s
@@ -141,9 +142,9 @@ func TestCreateGroup(t *testing.T) {
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{
-		Name:       "web",
+		Name:  "web",
 		Count: 3,
-		Node:       &NodeConfig{NodePool: "web-pool"},
+		Node:  &NodeConfig{NodePool: "web-pool"},
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", resp.StatusCode)
@@ -313,6 +314,45 @@ func TestScaleGroup_InvalidBody(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestCreateGroup_UnknownField(t *testing.T) {
+	srv := httptest.NewServer(buildMux(newFakeManager()))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/groups", "application/json",
+		bytes.NewBufferString(`{"name":"web","nmae":"typo"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var body map[string]string
+	mustDecode(t, resp, &body)
+	if !strings.Contains(body["error"], "nmae") {
+		t.Fatalf("expected error to mention unknown field, got: %s", body["error"])
+	}
+}
+
+func TestScaleGroup_UnknownField(t *testing.T) {
+	fm := newFakeManager(&Status{Name: "web"})
+	srv := httptest.NewServer(buildMux(fm))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/groups/web/scale", "application/json",
+		bytes.NewBufferString(`{"count":3,"cound":3}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var body map[string]string
+	mustDecode(t, resp, &body)
+	if !strings.Contains(body["error"], "cound") {
+		t.Fatalf("expected error to mention unknown field, got: %s", body["error"])
 	}
 }
 

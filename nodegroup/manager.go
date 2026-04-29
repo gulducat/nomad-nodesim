@@ -42,21 +42,21 @@ type NodeGroup struct {
 // Status is a point-in-time snapshot of a NodeGroup's state, safe to marshal
 // to JSON.
 type Status struct {
-	Name         string `json:"name"`
-	NodePool     string `json:"node_pool"`
-	Count int    `json:"count"`
-	Nodes int    `json:"nodes"`
-	Ready        bool   `json:"ready"`
+	Name     string `json:"name"`
+	NodePool string `json:"node_pool"`
+	Count    int    `json:"count"`
+	Nodes    int    `json:"nodes"`
+	Ready    bool   `json:"ready"`
 }
 
 func (ng *NodeGroup) status() *Status {
 	current := len(ng.nodes)
 	return &Status{
-		Name:         ng.name,
-		NodePool:     ng.effectiveCfg.Node.NodePool,
-		Count: ng.desired,
-		Nodes: current,
-		Ready:        current == ng.desired,
+		Name:     ng.name,
+		NodePool: ng.effectiveCfg.Node.NodePool,
+		Count:    ng.desired,
+		Nodes:    current,
+		Ready:    current == ng.desired,
 	}
 }
 
@@ -182,9 +182,9 @@ func (m *Manager) Shutdown() {
 // its initial status. Returns ErrAlreadyExists if the name is taken.
 func (m *Manager) Create(name string, startCount int, nodeOverride *internalConfig.Node) (*Status, error) {
 	gcfg := &internalConfig.NodeGroup{
-		Name:       name,
+		Name:  name,
 		Count: startCount,
-		Node:       nodeOverride,
+		Node:  nodeOverride,
 	}
 	ng := m.newNodeGroup(gcfg)
 
