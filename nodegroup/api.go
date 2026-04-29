@@ -64,6 +64,7 @@ func (nc *NodeConfig) toInternalNode() *internalConfig.Node {
 type managerFacade interface {
 	List() []*Status
 	Get(name string) (*Status, bool)
+	ListNodes(name string) ([]*NodeInfo, bool)
 	Create(name string, startCount int, nodeOverride *internalConfig.Node) (*Status, error)
 	Delete(name string) error
 	Scale(name string, count int) (*Status, error)
@@ -136,6 +137,16 @@ func buildMux(m managerFacade, logger hclog.Logger) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, s)
+	})
+
+	mux.HandleFunc("GET /v1/groups/{name}/nodes", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		nodes, ok := m.ListNodes(name)
+		if !ok {
+			writeError(w, http.StatusNotFound, "group not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, nodes)
 	})
 
 	mux.HandleFunc("DELETE /v1/groups/{name}", func(w http.ResponseWriter, r *http.Request) {

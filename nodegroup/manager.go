@@ -9,6 +9,7 @@ package nodegroup
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	internalConfig "github.com/hashicorp-forge/nomad-nodesim/internal/config"
@@ -24,14 +25,15 @@ var ErrNotFound = errors.New("group not found")
 // ErrAlreadyExists is returned when trying to create a group that already exists.
 var ErrAlreadyExists = errors.New("group already exists")
 
-// NodeGroup is a named, scalable set of simulated Nomad nodes. Nodes in the
-// group are named <group>-<index> (e.g. web-0, web-1). The same index always
-// produces the same Nomad node ID because Nomad derives node ID from the
-// client state directory path, which is based on the node name.
+// NodeGroup is a named, scalable set of simulated Nomad nodes. Nodes are named
+// <group>-<index> where index is a per-group counter that only ever increases.
+// Indices are never reused, so each node always gets a fresh state directory
+// and a unique Nomad node ID — avoiding stale drain state from prior runs.
 type NodeGroup struct {
 	name    string
 	desired int
 	nodes   map[int]*simnode.Node
+	nextIdx int // monotonically increasing; never reused across creates/deletes
 	mu      sync.Mutex
 
 	// effectiveCfg is the merged config used to build nodes for this group.
@@ -49,6 +51,12 @@ type Status struct {
 	Ready    bool   `json:"ready"`
 }
 
+// NodeInfo is a minimal description of a running simulated node.
+type NodeInfo struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+}
+
 func (ng *NodeGroup) status() *Status {
 	current := len(ng.nodes)
 	return &Status{
@@ -58,6 +66,17 @@ func (ng *NodeGroup) status() *Status {
 		Nodes:    current,
 		Ready:    current == ng.desired,
 	}
+}
+
+func (ng *NodeGroup) nodeInfos() []*NodeInfo {
+	out := make([]*NodeInfo, 0, len(ng.nodes))
+	for idx, node := range ng.nodes {
+		out = append(out, &NodeInfo{
+			Name: fmt.Sprintf("%s-%d", ng.name, idx),
+			ID:   node.Client.NodeID(),
+		})
+	}
+	return out
 }
 
 // Manager owns all NodeGroups and provides Scale/Get/List operations.
@@ -134,6 +153,21 @@ func (m *Manager) Get(name string) (*Status, bool) {
 	ng.mu.Lock()
 	defer ng.mu.Unlock()
 	return ng.status(), true
+}
+
+// ListNodes returns the node ID and name of every running node in the named
+// group. Returns (nil, false) if the group does not exist.
+func (m *Manager) ListNodes(name string) ([]*NodeInfo, bool) {
+	m.mu.RLock()
+	ng, ok := m.groups[name]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+
+	ng.mu.Lock()
+	defer ng.mu.Unlock()
+	return ng.nodeInfos(), true
 }
 
 // List returns the current status of all groups, sorted by name.
@@ -270,17 +304,18 @@ func (m *Manager) scaleGroup(ng *NodeGroup, count int) error {
 			node *simnode.Node
 			err  error
 		}
-		ch := make(chan result, count-current)
-		for i := current; i < count; i++ {
-			i := i
-			nodeName := fmt.Sprintf("%s-%d", ng.name, i)
+		need := count - current
+		ch := make(chan result, need)
+		for i := 0; i < need; i++ {
+			idx := ng.nextIdx + i
+			nodeName := fmt.Sprintf("%s-%d", ng.name, idx)
 			go func() {
 				node, err := nodefactory.Build(m.logger, m.buildInfo, ng.effectiveCfg, nodeName)
-				ch <- result{idx: i, node: node, err: err}
+				ch <- result{idx: idx, node: node, err: err}
 			}()
 		}
 		var errs []error
-		for i := current; i < count; i++ {
+		for i := 0; i < need; i++ {
 			r := <-ch
 			if r.err != nil {
 				errs = append(errs, fmt.Errorf("starting node %s-%d: %w", ng.name, r.idx, r.err))
@@ -288,21 +323,30 @@ func (m *Manager) scaleGroup(ng *NodeGroup, count int) error {
 			}
 			ng.nodes[r.idx] = r.node
 			m.logger.Info("started group node", "group", ng.name,
-				"node_name", fmt.Sprintf("%s-%d", ng.name, r.idx),
-				"node_id", r.node.Client.NodeID())
+				"node_name", fmt.Sprintf("%s-%d", ng.name, r.idx), "node_id", r.node.Client.NodeID())
 		}
+		ng.nextIdx += need
 		if len(errs) > 0 {
 			return errors.Join(errs...)
 		}
 	}
 
-	// Stop nodes for removed indices in parallel.
+	// Stop nodes for removed indices in parallel (highest indices first).
 	if count < current {
+		keys := make([]int, 0, current)
+		for k := range ng.nodes {
+			keys = append(keys, k)
+		}
+		sort.Sort(sort.Reverse(sort.IntSlice(keys)))
+		toStop := keys[:current-count]
+
 		wg := &sync.WaitGroup{}
-		for i := current - 1; i >= count; i-- {
+		for _, i := range toStop {
 			i := i
 			node := ng.nodes[i]
 			nodeName := fmt.Sprintf("%s-%d", ng.name, i)
+			m.logger.Info("stopping group node", "group", ng.name, "node_name", nodeName)
+			delete(ng.nodes, i)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -313,7 +357,6 @@ func (m *Manager) scaleGroup(ng *NodeGroup, count int) error {
 					m.logger.Info("stopped group node", "group", ng.name, "node_name", nodeName)
 				}
 			}()
-			delete(ng.nodes, i)
 		}
 		wg.Wait()
 	}

@@ -81,6 +81,16 @@ func (f *fakeManager) Scale(name string, count int) (*Status, error) {
 	return &cp, nil
 }
 
+func (f *fakeManager) ListNodes(name string) ([]*NodeInfo, bool) {
+	if _, ok := f.groups[name]; !ok {
+		return nil, false
+	}
+	// Return a fixed stub — tests that care about node contents can extend this.
+	return []*NodeInfo{
+		{Name: name + "-0", ID: "aaaaaaaa-0000-0000-0000-000000000000"},
+	}, true
+}
+
 // --- Tests ---
 
 func TestHealth(t *testing.T) {
@@ -209,6 +219,32 @@ func TestGetGroup_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/v1/groups/missing")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestListGroupNodes(t *testing.T) {
+	fm := newFakeManager(&Status{Name: "web"})
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/v1/groups/web/nodes")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var nodes []*NodeInfo
+	mustDecode(t, resp, &nodes)
+	if len(nodes) != 1 || nodes[0].Name != "web-0" || nodes[0].ID == "" {
+		t.Fatalf("unexpected nodes: %+v", nodes)
+	}
+}
+
+func TestListGroupNodes_NotFound(t *testing.T) {
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
+	defer srv.Close()
+
+	resp, _ := http.Get(srv.URL + "/v1/groups/missing/nodes")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
