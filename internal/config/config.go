@@ -41,8 +41,9 @@ type Config struct {
 	// application, or the "real" one pulled directly from Nomad.
 	AllocRunnerType string `hcl:"alloc_runner_type,optional"`
 
-	Log  *Log  `hcl:"log,block"`
-	Node *Node `hcl:"node,block"`
+	Log    *Log         `hcl:"log,block"`
+	Node   *Node        `hcl:"node,block"`
+	Groups []*NodeGroup `hcl:"group,block"`
 }
 
 const (
@@ -84,6 +85,23 @@ type NodeResource struct {
 	MemoryMB   uint64 `hcl:"memory_mb,optional"`
 }
 
+// NodeGroup is a named, scalable set of simulated Nomad nodes managed via the
+// node group HTTP API. Groups may be pre-declared in config and scaled by
+// external callers (e.g. the nodesim-target autoscaler plugin).
+type NodeGroup struct {
+	// Name is the unique identifier for this group, used in API paths and as
+	// a prefix for node names within the group (e.g. "web-0", "web-1").
+	Name string `hcl:"name,label"`
+
+	// StartCount is the initial number of nodes to start at launch. May be 0.
+	StartCount int `hcl:"start_count,optional"`
+
+	// Node overrides the top-level node{} block for nodes in this group.
+	// Only fields set here override the base; omitted fields inherit from the
+	// top-level node{} block. Use node_pool here to assign a Nomad node pool.
+	Node *Node `hcl:"node,block"`
+}
+
 // Default returns a default configuration object with all parameters set to
 // their default values. This returned object can be used as the basis for
 // merging user supplied data.
@@ -92,7 +110,7 @@ func Default() *Config {
 		WorkDir:         fmt.Sprintf("nomad-nodesim-%d", os.Getpid()),
 		NodeNamePrefix:  fmt.Sprintf("node-%s", uuid.Short()),
 		ServerAddr:      []string{"127.0.0.1:4647"},
-		NodeNum:         1,
+		NodeNum:         0,
 		AllocRunnerType: AllocRunnerTypeSim,
 		Log: &Log{
 			Level:           "debug",
@@ -139,13 +157,16 @@ func (c *Config) Merge(z *Config) *Config {
 		result.Log = c.Log.merge(z.Log)
 	}
 	if z.Node != nil {
-		result.Node = c.Node.merge(z.Node)
+		result.Node = c.Node.Merge(z.Node)
+	}
+	if len(z.Groups) > 0 {
+		result.Groups = z.Groups
 	}
 
 	return &result
 }
 
-func (n *Node) merge(z *Node) *Node {
+func (n *Node) Merge(z *Node) *Node {
 	if n == nil {
 		return z
 	}
