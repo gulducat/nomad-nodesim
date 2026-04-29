@@ -263,29 +263,59 @@ func (m *Manager) scaleGroup(ng *NodeGroup, count int) error {
 	ng.desired = count
 	current := len(ng.nodes)
 
-	// Start nodes for new indices.
-	for i := current; i < count; i++ {
-		nodeName := fmt.Sprintf("%s-%d", ng.name, i)
-		node, err := nodefactory.Build(m.logger, m.buildInfo, ng.effectiveCfg, nodeName)
-		if err != nil {
-			return fmt.Errorf("starting node %s: %w", nodeName, err)
+	// Start nodes for new indices in parallel.
+	if count > current {
+		type result struct {
+			idx  int
+			node *simnode.Node
+			err  error
 		}
-		ng.nodes[i] = node
-		m.logger.Info("started group node", "group", ng.name, "node_name", nodeName,
-			"node_id", node.Client.NodeID())
+		ch := make(chan result, count-current)
+		for i := current; i < count; i++ {
+			i := i
+			nodeName := fmt.Sprintf("%s-%d", ng.name, i)
+			go func() {
+				node, err := nodefactory.Build(m.logger, m.buildInfo, ng.effectiveCfg, nodeName)
+				ch <- result{idx: i, node: node, err: err}
+			}()
+		}
+		var errs []error
+		for i := current; i < count; i++ {
+			r := <-ch
+			if r.err != nil {
+				errs = append(errs, fmt.Errorf("starting node %s-%d: %w", ng.name, r.idx, r.err))
+				continue
+			}
+			ng.nodes[r.idx] = r.node
+			m.logger.Info("started group node", "group", ng.name,
+				"node_name", fmt.Sprintf("%s-%d", ng.name, r.idx),
+				"node_id", r.node.Client.NodeID())
+		}
+		if len(errs) > 0 {
+			return errors.Join(errs...)
+		}
 	}
 
-	// Stop nodes for removed indices (highest index first).
-	for i := current - 1; i >= count; i-- {
-		node := ng.nodes[i]
-		nodeName := fmt.Sprintf("%s-%d", ng.name, i)
-		if err := node.Shutdown(); err != nil {
-			m.logger.Warn("error stopping group node", "group", ng.name,
-				"node_name", nodeName, "error", err)
-		} else {
-			m.logger.Info("stopped group node", "group", ng.name, "node_name", nodeName)
+	// Stop nodes for removed indices in parallel.
+	if count < current {
+		wg := &sync.WaitGroup{}
+		for i := current - 1; i >= count; i-- {
+			i := i
+			node := ng.nodes[i]
+			nodeName := fmt.Sprintf("%s-%d", ng.name, i)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := node.Shutdown(); err != nil {
+					m.logger.Warn("error stopping group node", "group", ng.name,
+						"node_name", nodeName, "error", err)
+				} else {
+					m.logger.Info("stopped group node", "group", ng.name, "node_name", nodeName)
+				}
+			}()
+			delete(ng.nodes, i)
 		}
-		delete(ng.nodes, i)
+		wg.Wait()
 	}
 
 	return nil
