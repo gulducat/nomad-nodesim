@@ -83,6 +83,7 @@ func NewManager(cfg *internalConfig.Config, buildInfo *internalSimnode.BuildInfo
 // InitFromConfig pre-creates all groups from config and starts count
 // nodes for each. Returns the first error encountered.
 func (m *Manager) InitFromConfig() error {
+	m.logger.Info("initializing groups from config", "count", len(m.baseCfg.Groups))
 	for _, gcfg := range m.baseCfg.Groups {
 		ng := m.newNodeGroup(gcfg)
 
@@ -110,6 +111,7 @@ func (m *Manager) Scale(name string, count int) (*Status, error) {
 		return nil, fmt.Errorf("group %q not found", name)
 	}
 
+	m.logger.Info("scaling group", "group", name, "count", count)
 	if err := m.scaleGroup(ng, count); err != nil {
 		return nil, err
 	}
@@ -161,6 +163,7 @@ func (m *Manager) Shutdown() {
 	}
 	m.mu.RUnlock()
 
+	m.logger.Info("shutting down all groups", "count", len(groups))
 	wg := &sync.WaitGroup{}
 	for _, ng := range groups {
 		ng.mu.Lock()
@@ -181,6 +184,7 @@ func (m *Manager) Shutdown() {
 // Create registers a new named group, starts count nodes, and returns
 // its initial status. Returns ErrAlreadyExists if the name is taken.
 func (m *Manager) Create(name string, startCount int, nodeOverride *internalConfig.Node) (*Status, error) {
+	m.logger.Info("creating group", "group", name, "count", startCount)
 	gcfg := &internalConfig.NodeGroup{
 		Name:  name,
 		Count: startCount,
@@ -214,6 +218,7 @@ func (m *Manager) Create(name string, startCount int, nodeOverride *internalConf
 // Delete shuts down all nodes in the named group and removes it. Returns
 // ErrNotFound if the group does not exist.
 func (m *Manager) Delete(name string) error {
+	m.logger.Info("deleting group", "group", name)
 	m.mu.Lock()
 	ng, ok := m.groups[name]
 	if !ok {

@@ -10,6 +10,7 @@ import (
 	"os"
 
 	internalConfig "github.com/hashicorp-forge/nomad-nodesim/internal/config"
+	"github.com/hashicorp/go-hclog"
 )
 
 const defaultAddr = "[::]:4649"
@@ -77,13 +78,13 @@ func NewServer(m *Manager) *http.Server {
 	}
 	return &http.Server{
 		Addr:    addr,
-		Handler: buildMux(m),
+		Handler: buildMux(m, m.logger.Named("api")),
 	}
 }
 
 // buildMux constructs the API routes against a managerFacade, making it
 // testable with a fake manager.
-func buildMux(m managerFacade) http.Handler {
+func buildMux(m managerFacade, logger hclog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -97,14 +98,17 @@ func buildMux(m managerFacade) http.Handler {
 	mux.HandleFunc("POST /v1/groups", func(w http.ResponseWriter, r *http.Request) {
 		var req CreateRequest
 		if err := decodeStrict(r, &req); err != nil {
+			logger.Debug("bad request", "method", r.Method, "path", r.URL.Path, "error", err)
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if req.Name == "" {
+			logger.Debug("bad request", "method", r.Method, "path", r.URL.Path, "error", "name is required")
 			writeError(w, http.StatusBadRequest, "name is required")
 			return
 		}
 		if req.Count < 0 {
+			logger.Debug("bad request", "method", r.Method, "path", r.URL.Path, "error", "count must be >= 0")
 			writeError(w, http.StatusBadRequest, "count must be >= 0")
 			return
 		}
@@ -112,12 +116,15 @@ func buildMux(m managerFacade) http.Handler {
 		s, err := m.Create(req.Name, req.Count, req.Node.toInternalNode())
 		if err != nil {
 			if errors.Is(err, ErrAlreadyExists) {
+				logger.Debug("conflict creating group", "group", req.Name, "error", err)
 				writeError(w, http.StatusConflict, err.Error())
 			} else {
+				logger.Error("failed to create group", "group", req.Name, "error", err)
 				writeError(w, http.StatusInternalServerError, err.Error())
 			}
 			return
 		}
+		logger.Info("created group via API", "group", s.Name, "count", s.Count, "node_pool", s.NodePool)
 		writeJSON(w, http.StatusCreated, s)
 	})
 
@@ -135,12 +142,15 @@ func buildMux(m managerFacade) http.Handler {
 		name := r.PathValue("name")
 		if err := m.Delete(name); err != nil {
 			if errors.Is(err, ErrNotFound) {
+				logger.Debug("group not found for delete", "group", name)
 				writeError(w, http.StatusNotFound, err.Error())
 			} else {
+				logger.Error("failed to delete group", "group", name, "error", err)
 				writeError(w, http.StatusInternalServerError, err.Error())
 			}
 			return
 		}
+		logger.Info("deleted group via API", "group", name)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -151,10 +161,12 @@ func buildMux(m managerFacade) http.Handler {
 			Count int `json:"count"`
 		}
 		if err := decodeStrict(r, &req); err != nil {
+			logger.Debug("bad request", "method", r.Method, "path", r.URL.Path, "error", err)
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if req.Count < 0 {
+			logger.Debug("bad request", "method", r.Method, "path", r.URL.Path, "error", "count must be >= 0")
 			writeError(w, http.StatusBadRequest, "count must be >= 0")
 			return
 		}
@@ -162,12 +174,15 @@ func buildMux(m managerFacade) http.Handler {
 		s, err := m.Scale(name, req.Count)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
+				logger.Debug("group not found for scale", "group", name)
 				writeError(w, http.StatusNotFound, err.Error())
 			} else {
+				logger.Error("failed to scale group", "group", name, "count", req.Count, "error", err)
 				writeError(w, http.StatusInternalServerError, err.Error())
 			}
 			return
 		}
+		logger.Info("scaled group via API", "group", s.Name, "count", s.Count, "node_pool", s.NodePool)
 		writeJSON(w, http.StatusOK, s)
 	})
 

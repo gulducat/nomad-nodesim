@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	internalConfig "github.com/hashicorp-forge/nomad-nodesim/internal/config"
+	"github.com/hashicorp/go-hclog"
 )
 
 // fakeManager satisfies managerFacade without starting real Nomad nodes.
@@ -83,7 +84,7 @@ func (f *fakeManager) Scale(name string, count int) (*Status, error) {
 // --- Tests ---
 
 func TestHealth(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/health")
@@ -101,7 +102,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestListGroups_Empty(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/v1/groups")
@@ -123,7 +124,7 @@ func TestListGroups_WithGroups(t *testing.T) {
 		&Status{Name: "web", NodePool: "web-pool", Count: 2, Nodes: 2, Ready: true},
 		&Status{Name: "api", NodePool: "api-pool", Count: 1, Nodes: 1, Ready: true},
 	)
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/v1/groups")
@@ -138,7 +139,7 @@ func TestListGroups_WithGroups(t *testing.T) {
 }
 
 func TestCreateGroup(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{
@@ -157,7 +158,7 @@ func TestCreateGroup(t *testing.T) {
 }
 
 func TestCreateGroup_MissingName(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{Count: 1})
@@ -168,7 +169,7 @@ func TestCreateGroup_MissingName(t *testing.T) {
 
 func TestCreateGroup_AlreadyExists(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web"})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{Name: "web"})
@@ -178,7 +179,7 @@ func TestCreateGroup_AlreadyExists(t *testing.T) {
 }
 
 func TestCreateGroup_NegativeCount(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{Name: "web", Count: -1})
@@ -189,7 +190,7 @@ func TestCreateGroup_NegativeCount(t *testing.T) {
 
 func TestGetGroup_Found(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", Count: 3, Nodes: 3, Ready: true})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/v1/groups/web")
@@ -204,7 +205,7 @@ func TestGetGroup_Found(t *testing.T) {
 }
 
 func TestGetGroup_NotFound(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/v1/groups/missing")
@@ -215,7 +216,7 @@ func TestGetGroup_NotFound(t *testing.T) {
 
 func TestDeleteGroup(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web"})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/groups/web", nil)
@@ -234,7 +235,7 @@ func TestDeleteGroup(t *testing.T) {
 }
 
 func TestDeleteGroup_NotFound(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/v1/groups/missing", nil)
@@ -249,7 +250,7 @@ func TestDeleteGroup_NotFound(t *testing.T) {
 
 func TestScaleGroup_Up(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", Count: 1, Nodes: 1, Ready: true})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups/web/scale", map[string]int{"count": 5})
@@ -262,7 +263,7 @@ func TestScaleGroup_Up(t *testing.T) {
 
 func TestScaleGroup_Down(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", Count: 5, Nodes: 5, Ready: true})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups/web/scale", map[string]int{"count": 2})
@@ -274,7 +275,7 @@ func TestScaleGroup_Down(t *testing.T) {
 }
 
 func TestScaleGroup_NotFound(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/v1/groups/missing/scale",
@@ -289,7 +290,7 @@ func TestScaleGroup_NotFound(t *testing.T) {
 
 func TestScaleGroup_NegativeCount(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web"})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/v1/groups/web/scale",
@@ -304,7 +305,7 @@ func TestScaleGroup_NegativeCount(t *testing.T) {
 
 func TestScaleGroup_InvalidBody(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web"})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/v1/groups/web/scale",
@@ -318,7 +319,7 @@ func TestScaleGroup_InvalidBody(t *testing.T) {
 }
 
 func TestCreateGroup_UnknownField(t *testing.T) {
-	srv := httptest.NewServer(buildMux(newFakeManager()))
+	srv := httptest.NewServer(buildMux(newFakeManager(), hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/v1/groups", "application/json",
@@ -338,7 +339,7 @@ func TestCreateGroup_UnknownField(t *testing.T) {
 
 func TestScaleGroup_UnknownField(t *testing.T) {
 	fm := newFakeManager(&Status{Name: "web"})
-	srv := httptest.NewServer(buildMux(fm))
+	srv := httptest.NewServer(buildMux(fm, hclog.NewNullLogger()))
 	defer srv.Close()
 
 	resp, err := http.Post(srv.URL+"/v1/groups/web/scale", "application/json",
