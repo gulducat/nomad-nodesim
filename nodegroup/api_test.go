@@ -50,8 +50,8 @@ func (f *fakeManager) Create(name string, startCount int, _ *internalConfig.Node
 	}
 	s := &Status{
 		Name:         name,
-		DesiredCount: startCount,
-		CurrentCount: startCount,
+		Count: startCount,
+		Nodes: startCount,
 		Ready:        true,
 	}
 	f.groups[name] = s
@@ -72,8 +72,8 @@ func (f *fakeManager) Scale(name string, count int) (*Status, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
-	s.DesiredCount = count
-	s.CurrentCount = count
+	s.Count = count
+	s.Nodes = count
 	s.Ready = true
 	cp := *s
 	return &cp, nil
@@ -119,8 +119,8 @@ func TestListGroups_Empty(t *testing.T) {
 
 func TestListGroups_WithGroups(t *testing.T) {
 	fm := newFakeManager(
-		&Status{Name: "web", NodePool: "web-pool", DesiredCount: 2, CurrentCount: 2, Ready: true},
-		&Status{Name: "api", NodePool: "api-pool", DesiredCount: 1, CurrentCount: 1, Ready: true},
+		&Status{Name: "web", NodePool: "web-pool", Count: 2, Nodes: 2, Ready: true},
+		&Status{Name: "api", NodePool: "api-pool", Count: 1, Nodes: 1, Ready: true},
 	)
 	srv := httptest.NewServer(buildMux(fm))
 	defer srv.Close()
@@ -142,7 +142,7 @@ func TestCreateGroup(t *testing.T) {
 
 	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{
 		Name:       "web",
-		StartCount: 3,
+		Count: 3,
 		Node:       &NodeConfig{NodePool: "web-pool"},
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -150,7 +150,7 @@ func TestCreateGroup(t *testing.T) {
 	}
 	var s Status
 	mustDecode(t, resp, &s)
-	if s.Name != "web" || s.DesiredCount != 3 || s.CurrentCount != 3 {
+	if s.Name != "web" || s.Count != 3 || s.Nodes != 3 {
 		t.Fatalf("unexpected status: %+v", s)
 	}
 }
@@ -159,7 +159,7 @@ func TestCreateGroup_MissingName(t *testing.T) {
 	srv := httptest.NewServer(buildMux(newFakeManager()))
 	defer srv.Close()
 
-	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{StartCount: 1})
+	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{Count: 1})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
 	}
@@ -176,18 +176,18 @@ func TestCreateGroup_AlreadyExists(t *testing.T) {
 	}
 }
 
-func TestCreateGroup_NegativeStartCount(t *testing.T) {
+func TestCreateGroup_NegativeCount(t *testing.T) {
 	srv := httptest.NewServer(buildMux(newFakeManager()))
 	defer srv.Close()
 
-	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{Name: "web", StartCount: -1})
+	resp := mustPost(t, srv.URL+"/v1/groups", CreateRequest{Name: "web", Count: -1})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
 	}
 }
 
 func TestGetGroup_Found(t *testing.T) {
-	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", DesiredCount: 3, CurrentCount: 3, Ready: true})
+	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", Count: 3, Nodes: 3, Ready: true})
 	srv := httptest.NewServer(buildMux(fm))
 	defer srv.Close()
 
@@ -197,7 +197,7 @@ func TestGetGroup_Found(t *testing.T) {
 	}
 	var s Status
 	mustDecode(t, resp, &s)
-	if s.Name != "web" || s.DesiredCount != 3 || !s.Ready {
+	if s.Name != "web" || s.Count != 3 || !s.Ready {
 		t.Fatalf("unexpected status: %+v", s)
 	}
 }
@@ -247,27 +247,27 @@ func TestDeleteGroup_NotFound(t *testing.T) {
 }
 
 func TestScaleGroup_Up(t *testing.T) {
-	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", DesiredCount: 1, CurrentCount: 1, Ready: true})
+	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", Count: 1, Nodes: 1, Ready: true})
 	srv := httptest.NewServer(buildMux(fm))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups/web/scale", map[string]int{"count": 5})
 	var s Status
 	mustDecode(t, resp, &s)
-	if s.DesiredCount != 5 || s.CurrentCount != 5 || !s.Ready {
+	if s.Count != 5 || s.Nodes != 5 || !s.Ready {
 		t.Fatalf("unexpected status after scale: %+v", s)
 	}
 }
 
 func TestScaleGroup_Down(t *testing.T) {
-	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", DesiredCount: 5, CurrentCount: 5, Ready: true})
+	fm := newFakeManager(&Status{Name: "web", NodePool: "web-pool", Count: 5, Nodes: 5, Ready: true})
 	srv := httptest.NewServer(buildMux(fm))
 	defer srv.Close()
 
 	resp := mustPost(t, srv.URL+"/v1/groups/web/scale", map[string]int{"count": 2})
 	var s Status
 	mustDecode(t, resp, &s)
-	if s.DesiredCount != 2 || s.CurrentCount != 2 {
+	if s.Count != 2 || s.Nodes != 2 {
 		t.Fatalf("unexpected status after scale down: %+v", s)
 	}
 }

@@ -44,8 +44,8 @@ type NodeGroup struct {
 type Status struct {
 	Name         string `json:"name"`
 	NodePool     string `json:"node_pool"`
-	DesiredCount int    `json:"desired_count"`
-	CurrentCount int    `json:"current_count"`
+	Count int    `json:"count"`
+	Nodes int    `json:"nodes"`
 	Ready        bool   `json:"ready"`
 }
 
@@ -54,8 +54,8 @@ func (ng *NodeGroup) status() *Status {
 	return &Status{
 		Name:         ng.name,
 		NodePool:     ng.effectiveCfg.Node.NodePool,
-		DesiredCount: ng.desired,
-		CurrentCount: current,
+		Count: ng.desired,
+		Nodes: current,
 		Ready:        current == ng.desired,
 	}
 }
@@ -80,7 +80,7 @@ func NewManager(cfg *internalConfig.Config, buildInfo *internalSimnode.BuildInfo
 	}
 }
 
-// InitFromConfig pre-creates all groups from config and starts start_count
+// InitFromConfig pre-creates all groups from config and starts count
 // nodes for each. Returns the first error encountered.
 func (m *Manager) InitFromConfig() error {
 	for _, gcfg := range m.baseCfg.Groups {
@@ -90,8 +90,8 @@ func (m *Manager) InitFromConfig() error {
 		m.groups[gcfg.Name] = ng
 		m.mu.Unlock()
 
-		if gcfg.StartCount > 0 {
-			if err := m.scaleGroup(ng, gcfg.StartCount); err != nil {
+		if gcfg.Count > 0 {
+			if err := m.scaleGroup(ng, gcfg.Count); err != nil {
 				return fmt.Errorf("group %q: %w", gcfg.Name, err)
 			}
 		}
@@ -178,12 +178,12 @@ func (m *Manager) Shutdown() {
 	wg.Wait()
 }
 
-// Create registers a new named group, starts start_count nodes, and returns
+// Create registers a new named group, starts count nodes, and returns
 // its initial status. Returns ErrAlreadyExists if the name is taken.
 func (m *Manager) Create(name string, startCount int, nodeOverride *internalConfig.Node) (*Status, error) {
 	gcfg := &internalConfig.NodeGroup{
 		Name:       name,
-		StartCount: startCount,
+		Count: startCount,
 		Node:       nodeOverride,
 	}
 	ng := m.newNodeGroup(gcfg)

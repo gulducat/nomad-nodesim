@@ -17,7 +17,7 @@ const defaultAddr = "[::]:4649"
 // CreateRequest is the request body for POST /v1/groups.
 type CreateRequest struct {
 	Name       string      `json:"name"`
-	StartCount int         `json:"start_count"`
+	Count int         `json:"count"` 
 	Node       *NodeConfig `json:"node,omitempty"`
 }
 
@@ -104,12 +104,12 @@ func buildMux(m managerFacade) http.Handler {
 			writeError(w, http.StatusBadRequest, "name is required")
 			return
 		}
-		if req.StartCount < 0 {
-			writeError(w, http.StatusBadRequest, "start_count must be >= 0")
+		if req.Count < 0 {
+			writeError(w, http.StatusBadRequest, "count must be >= 0")
 			return
 		}
 
-		s, err := m.Create(req.Name, req.StartCount, req.Node.toInternalNode())
+		s, err := m.Create(req.Name, req.Count, req.Node.toInternalNode())
 		if err != nil {
 			if errors.Is(err, ErrAlreadyExists) {
 				writeError(w, http.StatusConflict, err.Error())

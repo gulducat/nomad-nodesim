@@ -41,14 +41,14 @@ func TestMergeGroups(t *testing.T) {
 	base := Default()
 	overlay := &Config{
 		Groups: []*NodeGroup{
-			{Name: "web", StartCount: 2},
+			{Name: "web", Count: 2},
 		},
 	}
 	result := base.Merge(overlay)
 	if len(result.Groups) != 1 {
 		t.Fatalf("expected 1 group, got %d", len(result.Groups))
 	}
-	if result.Groups[0].Name != "web" || result.Groups[0].StartCount != 2 {
+	if result.Groups[0].Name != "web" || result.Groups[0].Count != 2 {
 		t.Fatalf("unexpected group: %+v", result.Groups[0])
 	}
 }
@@ -71,7 +71,7 @@ work_dir = "/tmp/test"
 node_num = 0
 
 group "web" {
-  start_count = 3
+  count = 3
   node {
     node_pool = "web-pool"
     resources {
@@ -99,8 +99,8 @@ group "web" {
 	if g.Name != "web" {
 		t.Fatalf("expected group name=web, got %q", g.Name)
 	}
-	if g.StartCount != 3 {
-		t.Fatalf("expected start_count=3, got %d", g.StartCount)
+	if g.Count != 3 {
+		t.Fatalf("expected count=3, got %d", g.Count)
 	}
 	if g.Node == nil || g.Node.NodePool != "web-pool" {
 		t.Fatalf("expected node_pool=web-pool, got %v", g.Node)

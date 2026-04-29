@@ -93,8 +93,8 @@ type NodeGroup struct {
 	// a prefix for node names within the group (e.g. "web-0", "web-1").
 	Name string `hcl:"name,label"`
 
-	// StartCount is the initial number of nodes to start at launch. May be 0.
-	StartCount int `hcl:"start_count,optional"`
+	// Count is the initial number of nodes to start at launch. May be 0.
+	Count int `hcl:"count,optional"`
 
 	// Node overrides the top-level node{} block for nodes in this group.
 	// Only fields set here override the base; omitted fields inherit from the
