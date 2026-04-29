@@ -6,7 +6,6 @@ package simnode
 import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client"
-	"github.com/hashicorp/nomad/nomad/structs"
 )
 
 type Node struct {
@@ -21,26 +20,16 @@ func New(c *client.Client, logger hclog.Logger) *Node {
 	}
 }
 
+// Shutdown gracefully removes the node from the cluster and stops the client.
+//
+// Leave is called first, which drains any running allocations and marks the
+// node ineligible for scheduling. This uses the node's own auth token, so it
+// works correctly on ACL-enabled clusters. Once Leave returns (or the drain
+// deadline is reached), Shutdown stops the client process. The server will
+// mark the node "down" naturally once heartbeats cease.
 func (n *Node) Shutdown() error {
-	n.deregister()
+	if err := n.Client.Leave(); err != nil {
+		n.logger.Warn("error leaving cluster", "error", err)
+	}
 	return n.Client.Shutdown()
-}
-
-// deregister sends Node.Deregister to the server so the node is immediately
-// removed from the cluster rather than left in a "down" state until GC.
-// Errors are logged but do not block shutdown.
-func (n *Node) deregister() {
-	req := &structs.NodeDeregisterRequest{
-		NodeID: n.Client.NodeID(),
-		WriteRequest: structs.WriteRequest{
-			Region:    n.Client.Region(),
-			AuthToken: n.Client.GetConfig().Node.SecretID,
-		},
-	}
-	var resp structs.NodeUpdateResponse
-	if err := n.Client.RPC("Node.Deregister", req, &resp); err != nil {
-		n.logger.Warn("failed to deregister node", "error", err)
-	} else {
-		n.logger.Debug("deregistered node")
-	}
 }

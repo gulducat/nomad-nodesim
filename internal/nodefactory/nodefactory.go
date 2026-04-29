@@ -155,6 +155,14 @@ func Build(logger hclog.Logger, buildInfo *internalSimnode.BuildInfo, cfg *inter
 	clientCfg.ACLPolicyTTL = time.Hour
 	clientCfg.DisableRemoteExec = true
 	clientCfg.RPCHoldTimeout = 5 * time.Second
+	// Drain is required for Node.Leave() to drain allocations on shutdown.
+	// IgnoreSystemJobs prevents system jobs from blocking the drain. The
+	// deadline caps how long we wait before proceeding with shutdown anyway.
+	clientCfg.Drain = &config.DrainConfig{
+		Deadline:         10 * time.Second,
+		IgnoreSystemJobs: true,
+		Force:            false,
+	}
 
 	pluginLoader := pluginsim.New(clientCfg.Logger)
 	clientCfg.PluginLoader = pluginLoader
