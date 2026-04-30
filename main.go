@@ -63,6 +63,11 @@ func main() {
 
 	mergedConfig = mergedConfig.Merge(&flagConfig)
 
+	// Default to a single node when no node_num or groups are configured.
+	if mergedConfig.NodeNum == 0 && len(mergedConfig.Groups) == 0 {
+		mergedConfig.NodeNum = 1
+	}
+
 	// Build the logger used by the nodesim application.
 	logger := hclog.NewInterceptLogger(&hclog.LoggerOptions{
 		Name:            "nomad-nodesim",
